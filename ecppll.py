@@ -173,11 +173,13 @@ def load_bitstream(pll_settings):
     plat = Platform()
     top = Top(pll_settings)
     plat.build(top, "ecppll", "build/", ecppack_opts=["--compress"])
-    subprocess.run(["ecpdap", "program", "-q", "-f 30000", "build/ecppll.bit"])
+    subprocess.run(["ecpdap", "program", "-q", "-f", "30000", "build/ecppll.bit"])
 
 
 class SSA3021X:
     def __init__(self, ip_address, sa_settings):
+        if not sa_settings.valid():
+            raise ValueError("Invalid SA settings")
         self.sa_settings = sa_settings
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.connect((ip_address, 5025))
@@ -240,7 +242,6 @@ if __name__ == "__main__":
     freqs = np.linspace(fc - fs/2, fc + fs/2, 751)
 
     currents = range(0, 12)
-    traces = []
     for i in currents:
         print(f"Trying ICP_CURRENT={i}")
         load_bitstream(pll_settings._replace(icp_current=i))
