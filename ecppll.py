@@ -3,6 +3,7 @@ import socket
 import subprocess
 import numpy as np
 import amaranth as am
+import matplotlib.pyplot as plt
 from collections import namedtuple
 from amaranth.vendor.lattice_ecp5 import LatticeECP5Platform
 from amaranth.build import Resource, Pins, Attrs, Clock
@@ -172,7 +173,7 @@ def load_bitstream(pll_settings):
     plat = Platform()
     top = Top(pll_settings)
     plat.build(top, "ecppll", "build/", ecppack_opts=["--compress"])
-    subprocess.run(["ecpdap", "program", "build/ecppll.bit"])
+    subprocess.run(["ecpdap", "program", "--quiet", "build/ecppll.bit"])
 
 
 class SSA3021X:
@@ -216,7 +217,6 @@ class SSA3021X:
         self.command(":INIT:IMMEDIATE")
         self.sock.settimeout(1)
         resp = self.query(":TRACE:DATA? 1")
-        print(repr(resp))
         return [float(s) for s in resp.split(",")[:-1]]
 
     def command(self, cmd):
@@ -234,20 +234,32 @@ class SSA3021X:
 
 
 if __name__ == "__main__":
-    sa_settings = SASettings.default()
     pll_settings = PLLSettings.default()
+    sa_settings = SASettings(
+        freq_center=pll_settings.freq_out(),
+        freq_span=5e6,
+        ampl_att=30,
+        bw_rbw=300,
+        bw_vbw=300,
+    )
 
     sa = SSA3021X("ssa", sa_settings)
     sa.configure()
 
-    load_bitstream(pll_settings)
-    time.sleep(0.1)
-
-    trace = sa.measure()
-
-    import matplotlib.pyplot as plt
     fc = sa_settings.freq_center
     fs = sa_settings.freq_span
-    freqs = np.linspace(fc - fs/2, fc + fs/2, len(trace))
-    plt.plot(freqs, trace)
+    freqs = np.linspace(fc - fs/2, fc + fs/2, 751)
+
+    currents = range(0, 32, 4)
+    traces = []
+    for i in currents:
+        print(f"Trying ICP_CURRENT={i}")
+        load_bitstream(pll_settings._replace(icp_current=i))
+        time.sleep(0.1)
+        trace = sa.measure()
+        plt.plot(freqs, trace, label=f"ICP_CURRENT={i}")
+
+    plt.xlabel("Frequency (Hz)")
+    plt.ylabel("Power (dBm)")
+    plt.legend()
     plt.show()
