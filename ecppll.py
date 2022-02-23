@@ -158,6 +158,7 @@ class Top(am.Elaboratable):
             a_MFG_ENABLE_FILTEROPAMP=str(pll.mfg_en_filteropamp),
             p_CLKI_DIV=pll.clki_div,
             p_CLKFB_DIV=pll.clkfb_div,
+            p_CLKOP_DIV=pll.clkop_div,
             p_CLKOP_ENABLE="ENABLED",
             p_CLKOP_CPHASE=7,
             p_CLKOP_FPHASE=0,
