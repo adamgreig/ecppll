@@ -173,7 +173,7 @@ def load_bitstream(pll_settings):
     plat = Platform()
     top = Top(pll_settings)
     plat.build(top, "ecppll", "build/", ecppack_opts=["--compress"])
-    subprocess.run(["ecpdap", "program", "--quiet", "build/ecppll.bit"])
+    subprocess.run(["ecpdap", "program", "-q", "-f 30000", "build/ecppll.bit"])
 
 
 class SSA3021X:
@@ -186,26 +186,15 @@ class SSA3021X:
     def configure(self):
         sa = self.sa_settings
         self.sock.settimeout(1)
-        self.command(":INSTRUMENT:SELECT SA")
-        self.command(":INSTRUMENT:MEASURE OFF")
+        self.command(":SYSTEM:PRESET:TYPE DEFAULT")
         self.command(":INIT:CONTINUOUS OFF")
-        self.command(":TRACE1:MODE WRITE")
         self.command(f":SENSE:FREQ:CENTER {sa.freq_center}")
         self.command(f":SENSE:FREQ:SPAN {sa.freq_span}")
         self.command(":DISP:WINDOW:TRACE:Y:SCALE:RLEVEL 10 DBM")
         self.command(":SENSE:POWER:RF:ATT:AUTO OFF")
         self.command(f":SENSE:POWER:RF:ATT {sa.ampl_att}")
-        self.command(":SENSE:POWER:RF:GAIN:STATE OFF")
-        self.command(":DISPLAY:WINDOW:TRACE:Y:SCALE:RLEVEL:OFFSET 0")
-        self.command(":UNIT:POWER DBM")
-        self.command(":DISPLAY:WINDOW:TRACE:Y:SCALE:SPACING LOG")
-        self.command(":SENSE:CORR:IMPEDANCE:INPUT:MAGNITUDE OHM50")
-        self.command(":SENSE:SWEEP:MODE AUTO")
         self.command(":SENSE:SWEEP:TIME:AUTO ON")
-        self.command(":SENSE:SWEEP:SPEED NORMAL")
         self.command(":SENSE:SWEEP:COUNT 1")
-        self.command(":SENSE:FILTER:TYPE GAUSS")
-        self.command(":SENSE:DETECTOR:TRACE1:FUNCTION POSITIVE")
         self.command(":SENSE:BWIDTH:RES:AUTO OFF")
         self.command(":SENSE:BWIDTH:VIDEO:AUTO OFF")
         self.command(f":SENSE:BWIDTH:RES {sa.bw_rbw}")
@@ -250,7 +239,7 @@ if __name__ == "__main__":
     fs = sa_settings.freq_span
     freqs = np.linspace(fc - fs/2, fc + fs/2, 751)
 
-    currents = range(0, 32, 4)
+    currents = range(0, 12)
     traces = []
     for i in currents:
         print(f"Trying ICP_CURRENT={i}")
