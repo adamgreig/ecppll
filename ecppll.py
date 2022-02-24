@@ -4,6 +4,7 @@ import subprocess
 import numpy as np
 import amaranth as am
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 from collections import namedtuple
 from amaranth.vendor.lattice_ecp5 import LatticeECP5Platform
 from amaranth.build import Resource, Pins, Attrs, Clock
@@ -225,8 +226,76 @@ class SSA3021X:
         return buf.decode()
 
 
+class Counter:
+    def __init__(self, hostname, port=5025):
+        self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.s.connect((hostname, port))
+        self.hostname = hostname
+        self.port = port
+
+    def setup(self, samp_per_trig=10000, ch=1):
+        assert samp_per_trig <= 1000000
+        assert ch in (1, 2)
+        self.samp_per_trig = samp_per_trig
+        self.cmd('ABORT')
+        self.cmd('*WAI')
+        self.cmd(':FORM:DATA REAL')
+        self.cmd(':FORM:BORD SWAP')
+        self.cmd(':SYST:TIM 101.0')
+        self.cmd(f':SENS:FUNC "SPER {ch}"')
+        self.cmd(':SENS:TINT:GATE:SOUR IMM')
+        self.cmd(f':SAMPLE:COUN {samp_per_trig}')
+        self.cmd(':TRIG:COUN 1000000')
+        self.cmd(':TRIG:SOUR BUS')
+        self.cmd('*WAI')
+
+    def acquire(self, n_trig=25):
+        data = np.zeros((n_trig, self.samp_per_trig))
+        self.cmd('ABORT')
+        self.cmd('*WAI')
+        self.cmd('INIT')
+        self.cmd('*TRG')
+        for i in tqdm(range(n_trig - 1)):
+            self.cmd('*TRG')
+            data[i] = self.read(self.samp_per_trig)
+        data[i+1] = self.read(self.samp_per_trig)
+        self.cmd('ABORT')
+        return data
+
+    def cmd(self, cmd):
+        self.s.send(cmd.encode() + b"\r\n")
+
+    def read(self, n):
+        self.cmd(f':DATA:REM? {n},WAIT')
+        header = self.s.recv(2)
+        assert header[0] == ord("#"), "Expected SCPI definite-length block"
+        block_len_len = int(chr(header[1]))
+        block_len = int(self.s.recv(block_len_len))
+        assert block_len == 8 * n, f"Expected {n} readings, got {block_len/8}"
+
+        # Note transmitted block is terminated with \n, so account
+        # for extra byte and strip it at the end.
+        block = self.s.recv(block_len + 1)
+        while len(block) < block_len + 1:
+            block += self.s.recv(block_len + 1)
+
+        return np.frombuffer(block[:block_len])
+
+
+def analyse_periods(periods):
+    sd = []
+    pp = []
+    for batch in periods:
+        sd.append(np.std(batch))
+        pp.append(np.ptp(batch))
+    sd_ps = np.mean(sd) * 1e12
+    pp_ps = np.mean(pp) * 1e12
+    return sd_ps, pp_ps
+
+
 if __name__ == "__main__":
     pll_settings = PLLSettings.default()
+    pll_settings = pll_settings._replace(clkop_div=30, clkfb_div=1)
     sa_settings = SASettings(
         freq_center=pll_settings.freq_out(),
         freq_span=5e6,
@@ -235,6 +304,7 @@ if __name__ == "__main__":
         bw_vbw=300,
     )
 
+    """
     sa = SSA3021X("ssa", sa_settings)
     sa.configure()
 
@@ -252,5 +322,30 @@ if __name__ == "__main__":
 
     plt.xlabel("Frequency (Hz)")
     plt.ylabel("Power (dBm)")
+    plt.legend()
+    plt.show()
+    """
+
+    counter = Counter("ctr")
+    counter.setup()
+    time.sleep(1)
+
+    currents = range(0, 32)
+    sd_ps = []
+    pp_ps = []
+    for i in currents:
+        print(f"Trying ICP_CURRENT={i}")
+        load_bitstream(pll_settings._replace(icp_current=i))
+        time.sleep(0.1)
+        periods = counter.acquire()
+        jitter = analyse_periods(periods)
+        print(f"    {jitter[0]:.2}ps rms, {jitter[1]:.2}ps pp")
+        sd_ps.append(jitter[0])
+        pp_ps.append(jitter[1])
+
+    plt.plot(currents, sd_ps, label="RMS")
+    plt.plot(currents, pp_ps, label="Pk-Pk")
+    plt.xlabel("ICP_CURRENT")
+    plt.ylabel("Period jitter (ps)")
     plt.legend()
     plt.show()
